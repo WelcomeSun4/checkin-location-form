@@ -89,7 +89,7 @@
     }
   }
 
-  const FORMS_URL = "https://forms.office.com/xxxxxxxx"; // ←実際のURL
+  const FORMS_URL = "https://forms.office.com/Pages/ResponsePage.aspx?id=DUXPH3G7_U6uXZDHvnV-ErBciUpgzMxIuotXr1XJnMhUQ0w2MUtXSFVITzlGQjI2RUpVUFVHMkhIMy4u"; // ←実際のURL
 
   // 判定OK時のUI
   async function showGoToForms() {
@@ -117,7 +117,7 @@
     if (!copied) {
       document.getElementById('copy-btn').onclick = async () => {
         await copyToClipboard(deviceId);
-        alert('コピーしました。フォームの「端末ID」欄に貼り付けてください。');
+        alert('コピーしました。フォームの「端末IDを入力してください」欄に貼り付けてください。');
       };
     }
     document.getElementById('go-forms').onclick = () => {
