@@ -7,7 +7,7 @@
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 20px; }
     #card { border: 1px solid #ddd; padding: 16px; border-radius: 12px; max-width: 560px; }
-    button { padding: 10px 16px; }
+    button { padding: 10px 16px; cursor: pointer; }
     code { background: #f6f6f6; padding: 2px 4px; border-radius: 4px; }
   </style>
 </head>
@@ -19,34 +19,47 @@
   </div>
 
   <script>
-    /* ===== 設定値 ===== */
-    var TARGET_LAT = 35.390896;   // 会場の緯度（例）
-    var TARGET_LON = 139.469494;  // 会場の経度（例）
+    /* ===== 設定（会場座標・半径・Forms URL） ===== */
+    var TARGET_LAT = 35.390896;   // 会場の緯度（例：駒場研修センター付近）
+    var TARGET_LON = 139.469494;  // 会場の経度
     var RADIUS_M   = 100;       // 許容半径（メートル）
-
-    /* あなたの Microsoft Forms のURL（ご提供のもの） */
     var FORMS_URL  = "https://forms.office.com/Pages/ResponsePage.aspx?id=DUXPH3G7_U6uXZDHvnV-ErBciUpgzMxIuotXr1XJnMhUQ0w2MUtXSFVITzlGQjI2RUpVUFVHMkhIMy4u";
 
     /* ===== DOM 参照 ===== */
     var messageEl = document.getElementById('message');
 
-    /* ===== 端末IDの生成/保存（localStorage） ===== */
-    function getOrCreateDeviceId() {
-      try {
-        var id = localStorage.getItem('deviceId');
-        if (!id) {
-          if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-            id = window.crypto.randomUUID();
-          } else {
-            id = 'dev-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-          }
-          localStorage.setItem('deviceId', id);
-        }
-        return id;
-      } catch (e) {
-        // localStorage が使えない環境のフォールバック
-        return 'dev-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    /* ===== Cookie ユーティリティ ===== */
+    function setCookie(name, value, days) {
+      var exp = "";
+      if (days) {
+        var d = new Date();
+        d.setTime(d.getTime() + (days*24*60*60*1000));
+        exp = "; expires=" + d.toUTCString();
       }
+      // GitHub Pages は HTTPS なので Secure 指定
+      document.cookie = name + "=" + encodeURIComponent(value) + exp + "; path=/; SameSite=Lax; Secure";
+    }
+    function getCookie(name) {
+      var m = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+      return m ? decodeURIComponent(m[2]) : null;
+    }
+
+    /* ===== 端末IDの生成/保存（localStorage＋Cookie併用） ===== */
+    function getOrCreateDeviceId() {
+      var id = getCookie('deviceId');
+      if (!id) {
+        try { id = localStorage.getItem('deviceId'); } catch(e) { id = null; }
+      }
+      if (!id) {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+          id = window.crypto.randomUUID();
+        } else {
+          id = 'dev-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+        }
+      }
+      try { localStorage.setItem('deviceId', id); } catch(e) {}
+      setCookie('deviceId', id, 365); // 1年
+      return id;
     }
 
     /* ===== 距離計算（ハバースイン） ===== */
@@ -86,13 +99,13 @@
       }
     }
 
-    /* ===== クエリ付与（? / & を自動切替） ===== */
+    /* ===== クエリ付与（? / & 自動切替） ===== */
     function appendQuery(url, key, value) {
       var sep = url.indexOf('?') >= 0 ? '&' : '?';
       return url + sep + encodeURIComponent(key) + "=" + encodeURIComponent(value);
     }
 
-    /* ===== 判定OK時のUI ===== */
+    /* ===== 判定OK時のUI（ボタンクリックでコピー→Forms遷移） ===== */
     function renderGoUI(deviceId) {
       var ui = document.getElementById('ui');
       ui.style.display = 'block';
@@ -101,7 +114,7 @@
         'ボタンを押すと <strong>端末ID</strong> <code>' + deviceId + '</code> をコピーし、フォームへ進みます。</p>' +
         '<button id="copyAndGo">端末IDをコピーしてフォームへ</button>' +
         '<p style="font-size:12px;color:#666;margin-top:8px;">' +
-        '※ フォーム内の「端末IDを入力してください」欄に貼り付けて送信してください。</p>';
+        '※ フォーム内の「1.端末IDを入力してください」欄に貼り付けて送信してください。</p>';
 
       var btn = document.getElementById('copyAndGo');
       btn.addEventListener('click', function () {
