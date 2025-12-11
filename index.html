@@ -2,130 +2,116 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>入社式 受付ページ</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
+    button { padding: 10px 16px; }
+    #card { border: 1px solid #ddd; padding: 16px; border-radius: 12px; max-width: 560px; }
+    code { background:#f6f6f6; padding:2px 4px; border-radius:4px; }
+  </style>
 </head>
 <body>
   <h1>入社式 受付ページ</h1>
-  <p id="message">位置情報を確認しています。少々お待ちください。</p>
+  <div id="card">
+    <p id="status">位置情報を確認しています…</p>
+    <div id="ui" style="display:none"></div>
+  </div>
 
   <script>
-    // === ここを書き換える: 会場の緯度・経度・半径(m) ===
-    const TARGET_LAT = 35.390896;     // 例：駒場研修センター付近の緯度
-    const TARGET_LON = 139.469494;    // 例：駒場研修センター付近の経度
-    const RADIUS_M   = 100;         // 受付を許可する半径（メートル）
+    // ===== 設定値 =====
+    const TARGET_LAT = 35.390896;     // 会場の緯度
+    const TARGET_LON = 139.469494;    // 会場の経度
+    const RADIUS_M   = 100;         // 許容半径
+    const FORMS_URL  = "https://forms.office.com/Pages/ResponsePage.aspx?id=DUXPH3G7_U6uXZDHvnV-ErBciUpgzMxIuotXr1XJnMhUQ0w2MUtXSFVITzlGQjI2RUpVUFVHMkhIMy4u"; // ←実際のURLに変更
 
-    // === ここを書き換える: Microsoft Forms のURL ===
-    const FORMS_URL = "https://forms.office.com/Pages/ResponsePage.aspx?id=DUXPH3G7_U6uXZDHvnV-ErBciUpgzMxIuotXr1XJnMhUQ0w2MUtXSFVITzlGQjI2RUpVUFVHMkhIMy4u"; 
+    // ===== 端末IDの生成/保存 =====
+    function getOrCreateDeviceId() {
+      let id = localStorage.getItem('deviceId');
+      if (!id) {
+        if (window.crypto?.randomUUID) {
+          id = crypto.randomUUID();
+        } else {
+          id = 'dev-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+        }
+        localStorage.setItem('deviceId', id);
+      }
+      return id;
+    }
 
-    // 距離計算（ハバースインの公式）
-    function calcDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371000; // 地球半径(m)
-      const toRad = deg => deg * Math.PI / 180;
+    // ===== 距離計算 =====
+    function distanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
       const dLat = toRad(lat2 - lat1);
       const dLon = toRad(lon2 - lon1);
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-        Math.sin(dLon / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    function showMessage(text) {
-      document.getElementById("message").textContent = text;
+    // ===== クリップボード：標準API＋フォールバック =====
+    async function copyText(text) {
+      // 標準API（HTTPSかつユーザー操作が必要）
+      if (navigator.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+      }
+      // フォールバック（選択→execCommand）
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed'; ta.style.top = '-1000px';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch { return false; }
     }
 
-    // 位置情報取得
+    // ===== 判定OK時のUI（ボタン内でコピー→遷移） =====
+    function renderGoUI(deviceId) {
+      const ui = document.getElementById('ui');
+      ui.style.display = 'block';
+      ui.innerHTML = `
+        <p>会場範囲内を確認しました。<br>
+           ボタンを押すと <strong>端末ID</strong> <code>${deviceId}</code> をコピーし、フォームへ進みます。</p>
+        <button id="copyAndGo">端末IDをコピーしてフォームへ</button>
+        <p style="font-size:12px;color:#666;margin-top:8px;">※ フォーム内の「端末IDを入力してください」欄に貼り付けて送信してください。</p>
+      `;
+      document.getElementById('copyAndGo').addEventListener('click', async () => {
+        const ok = await copyText(deviceId);
+        if (!ok) {
+          alert('自動コピーに失敗しました。端末IDを手動でコピーして貼り付けてください：\n' + deviceId);
+        }
+        // 参考：パラメータも付けておく（Forms側で閲覧はできるが自動入力は不可）
+        location.href = `${FORMS_URL}?device=${encodeURIComponent(deviceId)}`;
+      });
+    }
+
+    // ===== 位置取得 → 判定 =====
+    const status = document.getElementById('status');
     if (!navigator.geolocation) {
-      showMessage("この端末では位置情報を取得できません。別の端末をご利用ください。");
+      status.textContent = 'この端末では位置情報を取得できません。ブラウザ設定をご確認ください。';
     } else {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          const dist = calcDistance(lat, lon, TARGET_LAT, TARGET_LON);
-
-          console.log("Your position:", lat, lon, "Distance:", dist);
-
+        pos => {
+          const { latitude, longitude } = pos.coords;
+          const dist = distanceMeters(latitude, longitude, TARGET_LAT, TARGET_LON);
           if (dist <= RADIUS_M) {
-            showMessage("会場範囲内が確認できました。フォームに移動します。");
-            // 数秒待ってからFormsへ遷移してもよい
-            setTimeout(() => {
-              window.location.href = FORMS_URL;
-            }, 1000);
+            status.textContent = '位置確認OK。';
+            const deviceId = getOrCreateDeviceId();
+            renderGoUI(deviceId);   // ← ここでボタンを表示
           } else {
-            showMessage("会場範囲外のため、この場所からはフォームに回答できません。");
+            status.textContent = '会場範囲外のため、この場所からは回答できません。';
           }
         },
-        (err) => {
+        err => {
+          status.textContent = '位置情報の取得が許可されませんでした。ブラウザの位置情報設定をONにしてください。';
           console.error(err);
-          showMessage("位置情報の取得が許可されませんでした。ブラウザの設定をご確認ください。");
-        }
+        },
+        { enableHighAccuracy: true, timeout: 15000 }
       );
     }
   </script>
-  <script>
-  // ===== 端末IDの生成・保存 =====
-  function getOrCreateDeviceId() {
-    let id = localStorage.getItem('deviceId');
-    if (!id) {
-      if (crypto && crypto.randomUUID) {
-        id = crypto.randomUUID();
-      } else {
-        // 簡易UUID（古い端末向け）
-        id = 'dev-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-      }
-      localStorage.setItem('deviceId', id);
-    }
-    return id;
-  }
-
-  async function copyToClipboard(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  const FORMS_URL = "https://forms.office.com/Pages/ResponsePage.aspx?id=DUXPH3G7_U6uXZDHvnV-ErBciUpgzMxIuotXr1XJnMhUQ0w2MUtXSFVITzlGQjI2RUpVUFVHMkhIMy4u"; // ←実際のURL
-
-  // 判定OK時のUI
-  async function showGoToForms() {
-    const deviceId = getOrCreateDeviceId();
-    const copied = await copyToClipboard(deviceId);
-    const msg = copied
-      ? "会場範囲内を確認しました。端末IDを自動コピーしました。フォームで貼り付けて送信してください。"
-      : `会場範囲内を確認しました。下の端末IDをコピーしてフォームで貼り付けてください：\n${deviceId}`;
-
-    const container = document.createElement('div');
-    container.innerHTML = `
-      <p>${msg.replace(/\n/g,'<br>')}</p>
-      ${copied ? '' : `
-        <div style="margin:8px 0;padding:8px;border:1px dashed #999;">
-          <code id="dev-id">${deviceId}</code>
-          <button id="copy-btn">コピー</button>
-        </div>`}
-      <button id="go-forms" style="padding:8px 16px;">フォームへ進む</button>
-      <p style="font-size:12px;color:#666;">
-        ※フォーム内の「端末IDを入力してください」欄に貼り付けてください（必須）。同一端末の複数回答は無効になる場合があります。
-      </p>
-    `;
-    document.body.appendChild(container);
-
-    if (!copied) {
-      document.getElementById('copy-btn').onclick = async () => {
-        await copyToClipboard(deviceId);
-        alert('コピーしました。フォームの「端末IDを入力してください」欄に貼り付けてください。');
-      };
-    }
-    document.getElementById('go-forms').onclick = () => {
-      // そのまま遷移（パラメータは参考程度に付与）
-      window.location.href = `${FORMS_URL}?device=${encodeURIComponent(deviceId)}`;
-    };
-  }
-</script>
-
 </body>
 </html>
