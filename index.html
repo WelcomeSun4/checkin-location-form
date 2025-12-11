@@ -64,5 +64,68 @@
       );
     }
   </script>
+  <script>
+  // ===== 端末IDの生成・保存 =====
+  function getOrCreateDeviceId() {
+    let id = localStorage.getItem('deviceId');
+    if (!id) {
+      if (crypto && crypto.randomUUID) {
+        id = crypto.randomUUID();
+      } else {
+        // 簡易UUID（古い端末向け）
+        id = 'dev-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+      }
+      localStorage.setItem('deviceId', id);
+    }
+    return id;
+  }
+
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  const FORMS_URL = "https://forms.office.com/xxxxxxxx"; // ←実際のURL
+
+  // 判定OK時のUI
+  async function showGoToForms() {
+    const deviceId = getOrCreateDeviceId();
+    const copied = await copyToClipboard(deviceId);
+    const msg = copied
+      ? "会場範囲内を確認しました。端末IDを自動コピーしました。フォームで貼り付けて送信してください。"
+      : `会場範囲内を確認しました。下の端末IDをコピーしてフォームで貼り付けてください：\n${deviceId}`;
+
+    const container = document.createElement('div');
+    container.innerHTML = `
+      <p>${msg.replace(/\n/g,'<br>')}</p>
+      ${copied ? '' : `
+        <div style="margin:8px 0;padding:8px;border:1px dashed #999;">
+          <code id="dev-id">${deviceId}</code>
+          <button id="copy-btn">コピー</button>
+        </div>`}
+      <button id="go-forms" style="padding:8px 16px;">フォームへ進む</button>
+      <p style="font-size:12px;color:#666;">
+        ※フォーム内の「端末IDを入力してください」欄に貼り付けてください（必須）。同一端末の複数回答は無効になる場合があります。
+      </p>
+    `;
+    document.body.appendChild(container);
+
+    if (!copied) {
+      document.getElementById('copy-btn').onclick = async () => {
+        await copyToClipboard(deviceId);
+        alert('コピーしました。フォームの「端末ID」欄に貼り付けてください。');
+      };
+    }
+    document.getElementById('go-forms').onclick = () => {
+      // そのまま遷移（パラメータは参考程度に付与）
+      window.location.href = `${FORMS_URL}?device=${encodeURIComponent(deviceId)}`;
+    };
+  }
+</script>
+
 </body>
 </html>
