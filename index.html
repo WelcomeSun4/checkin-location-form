@@ -6,26 +6,30 @@
   <title>入社式 受付ページ</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
-    button { padding: 10px 16px; }
     #card { border: 1px solid #ddd; padding: 16px; border-radius: 12px; max-width: 560px; }
-    code { background:#f6f6f6; padding:2px 4px; border-radius:4px; }
+    button { padding: 10px 16px; }
+    code { background: #f6f6f6; padding: 2px 4px; border-radius: 4px; }
   </style>
 </head>
 <body>
   <h1>入社式 受付ページ</h1>
   <div id="card">
-    <p id="status">位置情報を確認しています…</p>
+    <!-- HTMLは message で統一 -->
+    <p id="message">位置情報を確認しています。少々お待ちください。</p>
     <div id="ui" style="display:none"></div>
   </div>
 
   <script>
-    // ===== 設定値 =====
-    const TARGET_LAT = 35.390896;     // 会場の緯度
-    const TARGET_LON = 139.469494;    // 会場の経度
-    const RADIUS_M   = 100;         // 許容半径
-    const FORMS_URL  = "https://forms.office.com/Pages/ResponsePage.aspx?id=DUXPH3G7_U6uXZDHvnV-ErBciUpgzMxIuotXr1XJnMhUQ0w2MUtXSFVITzlGQjI2RUpVUFVHMkhIMy4u"; // ←実際のURLに変更
+    // ===== 設定値（会場座標・半径・Forms URL） =====
+    const TARGET_LAT = 35.390896;     // 会場の緯度（例）
+    const TARGET_LON = 139.469494;    // 会場の経度（例）
+    const RADIUS_M   = 100;         // 許容半径（メートル）
+    const FORMS_URL  = "https://forms.office.com/Pages/ResponsePage.aspx?id=DUXPH3G7_U6uXZDHvnV-ErBciUpgzMxIuotXr1XJnMhUQ0w2MUtXSFVITzlGQjI2RUpVUFVHMkhIMy4u"; // ←実際のURLに差し替え
 
-    // ===== 端末IDの生成/保存 =====
+    // ===== 共通：message 要素の参照（HTMLに合わせる） =====
+    const messageEl = document.getElementById('message');
+
+    // ===== 端末IDの生成/保存（localStorage） =====
     function getOrCreateDeviceId() {
       let id = localStorage.getItem('deviceId');
       if (!id) {
@@ -39,23 +43,23 @@
       return id;
     }
 
-    // ===== 距離計算 =====
+    // ===== 距離計算（ハバースイン） =====
     function distanceMeters(lat1, lon1, lat2, lon2) {
       const R = 6371000;
       const toRad = d => d * Math.PI / 180;
       const dLat = toRad(lat2 - lat1);
       const dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon/2)**2;
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // ===== クリップボード：標準API＋フォールバック =====
+    // ===== クリップボード（標準API＋フォールバック） =====
     async function copyText(text) {
-      // 標準API（HTTPSかつユーザー操作が必要）
       if (navigator.clipboard?.writeText) {
-        try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+        try { await navigator.clipboard.writeText(text); return true; } catch(e) {}
       }
-      // フォールバック（選択→execCommand）
       try {
         const ta = document.createElement('textarea');
         ta.value = text;
@@ -68,7 +72,7 @@
       } catch { return false; }
     }
 
-    // ===== 判定OK時のUI（ボタン内でコピー→遷移） =====
+    // ===== 判定OK時UI（ボタンクリック内でコピー→遷移） =====
     function renderGoUI(deviceId) {
       const ui = document.getElementById('ui');
       ui.style.display = 'block';
@@ -76,38 +80,39 @@
         <p>会場範囲内を確認しました。<br>
            ボタンを押すと <strong>端末ID</strong> <code>${deviceId}</code> をコピーし、フォームへ進みます。</p>
         <button id="copyAndGo">端末IDをコピーしてフォームへ</button>
-        <p style="font-size:12px;color:#666;margin-top:8px;">※ フォーム内の「端末IDを入力してください」欄に貼り付けて送信してください。</p>
+        <p style="font-size:12px;color:#666;margin-top:8px;">
+          ※ フォーム内の「端末IDを入力してください」欄に貼り付けて送信してください。
+        </p>
       `;
       document.getElementById('copyAndGo').addEventListener('click', async () => {
         const ok = await copyText(deviceId);
         if (!ok) {
           alert('自動コピーに失敗しました。端末IDを手動でコピーして貼り付けてください：\n' + deviceId);
         }
-        // 参考：パラメータも付けておく（Forms側で閲覧はできるが自動入力は不可）
+        // 参考としてパラメータも付与（Formsで自動入力はできませんが、ログ用途に有用）
         location.href = `${FORMS_URL}?device=${encodeURIComponent(deviceId)}`;
       });
     }
 
-    // ===== 位置取得 → 判定 =====
-    const status = document.getElementById('status');
+    // ===== 位置取得 → 判定 → UI更新（message を使用） =====
     if (!navigator.geolocation) {
-      status.textContent = 'この端末では位置情報を取得できません。ブラウザ設定をご確認ください。';
+      messageEl.textContent = 'この端末では位置情報を取得できません。ブラウザ設定をご確認ください。';
     } else {
       navigator.geolocation.getCurrentPosition(
         pos => {
           const { latitude, longitude } = pos.coords;
           const dist = distanceMeters(latitude, longitude, TARGET_LAT, TARGET_LON);
           if (dist <= RADIUS_M) {
-            status.textContent = '位置確認OK。';
+            messageEl.textContent = '位置確認OK。';
             const deviceId = getOrCreateDeviceId();
-            renderGoUI(deviceId);   // ← ここでボタンを表示
+            renderGoUI(deviceId);
           } else {
-            status.textContent = '会場範囲外のため、この場所からは回答できません。';
+            messageEl.textContent = '会場範囲外のため、この場所からは回答できません。';
           }
         },
         err => {
-          status.textContent = '位置情報の取得が許可されませんでした。ブラウザの位置情報設定をONにしてください。';
           console.error(err);
+          messageEl.textContent = '位置情報の取得が許可されませんでした。ブラウザの位置情報設定をONにしてください。';
         },
         { enableHighAccuracy: true, timeout: 15000 }
       );
